@@ -40,7 +40,7 @@ python -m pip install pytest
 python -m pytest
 ```
 
-Some agent checks are Windows-specific. A test suite or workflow definition does not prove that a revision passed. Check the GitHub Actions result for the exact commit you intend to use.
+Some agent checks are Windows-specific. The presence of tests does not prove that a revision passed. Run them against the exact commit you intend to use. CI is not yet configured for this clean copy.
 
 ## Data and privacy
 

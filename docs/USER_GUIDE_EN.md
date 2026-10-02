@@ -62,7 +62,7 @@ For vulnerability reporting and further deployment advice, see [SECURITY.md](../
 
 ## Tests
 
-Install pytest and run `python -m pytest` from the project directory. Some agent checks require Windows. Check the GitHub Actions result for the exact branch or commit you plan to use. This guide does not claim that any unrun test passed.
+Install pytest and run `python -m pytest` from the project directory. Some agent checks require Windows. Run the checks against the exact branch or commit you plan to use. CI is not yet configured for this clean copy; this guide does not claim that any unrun test passed.
 
 ## Troubleshooting
 
