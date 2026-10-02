@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BlackFox AI Workstation — кластер LLM-узлов</title>
+  <meta name="theme-color" content="#070a10">
+  <meta name="color-scheme" content="dark light">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BlackFox">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-48.png">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <link rel="stylesheet" href="/style.css?v=11">
+  <link rel="stylesheet" href="/mobile.css?v=11">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== Sidebar: chat threads ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <div class="brand">
+        <span class="brand-logo">🦊</span>
+        <div style="min-width:0">
+          <div class="brand-title">BLACKFOX AI</div>
+          <div class="brand-sub">Кластер LLM-узлов</div>
+        </div>
+      </div>
+      <button class="btn ghost icon" onclick="UI.toggleSidebar()" title="Скрыть панель">◀</button>
+    </div>
+    <div class="sb-actions">
+      <button class="btn primary grow" onclick="Threads.create()">＋ Новый чат</button>
+    </div>
+    <div class="sb-search row">
+      <input type="text" id="threadSearch" placeholder="Поиск по веткам…" oninput="Threads.render()" class="grow">
+      <div class="seg mini" id="threadFilter">
+        <button data-f="mine" onclick="Threads.setFilter('mine')" title="Только мои ветки">Мои</button>
+        <button data-f="all" class="active" onclick="Threads.setFilter('all')" title="Ветки всех пользователей">Все</button>
+      </div>
+    </div>
+    <div class="thread-list" id="threadList"></div>
+    <div class="sb-foot">
+      <div class="me">
+        <div class="me-avatar" id="meAvatar">?</div>
+        <div style="min-width:0">
+          <div class="me-name" id="meName">…</div>
+          <div class="me-ip" id="meIp"></div>
+        </div>
+        <span class="badge admin-badge" id="meAdminBadge" style="display:none" title="Интерфейс открыт с хост-машины: доступны функции администратора">ADMIN</span>
+        <button class="btn ghost sm" onclick="UI.showTab('users')" title="Профиль">✎</button>
+        <button class="btn ghost sm" id="logoutBtn" onclick="Auth.logout()" title="Выйти" style="display:none">⎋</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost icon" id="sidebarOpenBtn" onclick="UI.toggleSidebar()" title="Ветки чатов">☰</button>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="chat" onclick="UI.showTab('chat')">💬 <span class="tl">Чат</span></button>
+        <button class="tab" data-tab="telemetry" onclick="UI.showTab('telemetry')">📊 <span class="tl">Телеметрия</span></button>
+        <button class="tab" data-tab="prompts" onclick="UI.showTab('prompts')">🧠 <span class="tl">Промпт-роли</span></button>
+        <button class="tab" data-tab="models" onclick="UI.showTab('models')">🧮 <span class="tl">Модели</span></button>
+        <button class="tab" data-tab="users" onclick="UI.showTab('users')">👥 <span class="tl">Пользователи</span></button>
+        <button class="tab" data-tab="help" onclick="UI.showTab('help')">📖 <span class="tl">Справка</span></button>
+        <button class="tab" data-tab="settings" onclick="UI.showTab('settings')">⚙️ <span class="tl">Настройки</span></button>
+        <button class="tab admin-only" data-tab="admin" onclick="UI.showTab('admin')" style="display:none">🛡 <span class="tl">Админ</span></button>
+      </nav>
+      <div class="topbar-right">
+        <div class="cluster-pill" id="clusterPill" title="Состояние узлов"><span class="dots" id="clusterDots"></span><span id="clusterText">—</span></div>
+        <div class="cluster-pill tunnel-pill" id="tunnelPill" onclick="UI.copyTunnel()" title="Скопировать адрес для доступа через Tailscale">🌐 <span id="tunnelText">…</span></div>
+        <button class="btn ghost icon" id="themeBtn" onclick="UI.toggleTheme()" title="Тема">🌙</button>
+      </div>
+    </header>
+
+    <!-- ===== Chat ===== -->
+    <section class="view active" id="view-chat">
+      <div class="nodes-strip" id="nodesStrip"></div>
+      <div class="chat-head">
+        <input class="chat-title" id="chatTitle" value="" placeholder="Название ветки" onchange="Threads.renameCurrent(this.value)">
+        <span class="muted small" id="chatMeta"></span>
+        <button class="btn sm" onclick="Chat.exportThread()" title="Экспорт ветки в Markdown">⬇<span class="bl"> Экспорт</span></button>
+        <button class="btn sm danger" onclick="Chat.clearThread()" title="Полностью очистить окно чата">🧹<span class="bl"> Очистить чат</span></button>
+      </div>
+      <div class="messages" id="messages">
+        <div class="empty" id="chatEmpty">
+          <div class="ico">💼</div>
+          <div class="t">Ветка пуста</div>
+          <div>Выберите режим работы узлов, skill и опишите задачу. <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> — отправить.</div>
+        </div>
+      </div>
+      <div class="composer">
+        <div class="ctl-row">
+          <div class="seg" id="modeSeg">
+            <button data-mode="single" class="active" onclick="Chat.setMode('single')" title="Запрос одному узлу (с историей ветки)">🎯 Один узел</button>
+            <button data-mode="all" onclick="Chat.setMode('all')" title="Параллельно на всех включённых узлах, ответ каждого отдельно">⚡ Все узлы</button>
+            <button data-mode="pipeline" onclick="Chat.setMode('pipeline')" title="Последовательный конвейер по шагам из настроек">🔄 Конвейер</button>
+            <button data-mode="hybrid" onclick="Chat.setMode('hybrid')" title="Свой план: этапы, в каждом — узлы параллельно; результаты идут дальше">🧩 Гибрид</button>
+            <button data-mode="council" onclick="Chat.setMode('council')" title="Узлы пишут черновики, обсуждают их между собой, модератор выдаёт один общий ответ">🤝 Консилиум</button>
+          </div>
+          <select id="targetNode" class="sm" onchange="Chat.onTargetChange()" title="Целевой узел"></select>
+          <select id="targetModel" class="sm admin-only" style="max-width:300px" onchange="Chat.onModelPick(this.value)" title="Модель на целевом узле (только администратор)"></select>
+          <button class="btn sm" id="planBtn" onclick="Chat.togglePanel('plan')" style="display:none">🧩 План ветки</button>
+          <button class="btn sm" id="councilBtn" onclick="Chat.togglePanel('council')" style="display:none">🤝 Участники</button>
+          <span class="small muted" id="planSummary"></span>
+          <span class="grow"></span>
+          <select id="skillSelect" class="sm" onchange="Chat.onSkillChange(this.value)" title="Skill — готовый режим ответа"></select>
+          <label class="row small muted chk" title="Узлы отвечают без своих системных промптов (только правило языка и skill)"><input type="checkbox" id="noRoles" onchange="Chat.onNoRoles(this.checked)"> без ролей</label>
+          <label class="row small muted chk admin-only" id="toolsLabel" title="Модель может выполнять команды PowerShell/bash на узлах, где это разрешено (Настройки → Узлы). Каждая команда показывается и ждёт подтверждения"><input type="checkbox" id="toolsOn" onchange="Chat.onTools(this.checked)"> 🖥 Агент ПК</label>
+          <div class="pop-anchor">
+            <button class="btn sm" onclick="UI.togglePopover('paramsPop')">🎛</button>
+            <div class="popover" id="paramsPop" style="right:0; bottom:34px;">
+              <div class="params-grid">
+                <div class="field"><label>temperature</label><input type="number" step="0.05" min="0" max="2" id="pTemp"></div>
+                <div class="field"><label>max_tokens</label><input type="number" step="128" min="16" id="pMax"></div>
+                <div class="field"><label>reasoning</label><select id="pReason"><option value="">по умолчанию</option><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="off">не передавать</option></select></div>
+                <div class="field"><label>история (ходов)</label><input type="number" min="0" max="50" id="pHist"></div>
+              </div>
+              <div class="row" style="margin-top:10px; justify-content:space-between">
+                <span class="hint muted small">Пусто = из skill / Настроек → LLM</span>
+                <button class="btn sm ghost" onclick="Chat.resetParams()">Сбросить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="panel-plan" style="display:none"></div>
+        <div class="panel" id="panel-council" style="display:none"></div>
+        <div class="attach-chips" id="attachChips" style="display:none"></div>
+        <div class="send-row">
+          <button class="btn btn-send btn-attach" id="btnAttach" title="Приложить файлы (документы, код, таблицы, изображения). Можно перетащить в поле или вставить из буфера" onclick="Chat.pickFiles()">📎</button>
+          <input type="file" id="fileInput" multiple style="display:none" onchange="Chat.addFiles(this.files); this.value=''">
+          <textarea id="taskInput" rows="2" placeholder="Опишите задачу или вставьте код… (Ctrl+Enter — отправить, Shift+Enter — новая строка)"></textarea>
+          <button class="btn primary btn-send" id="btnSend" onclick="Chat.submit()">🚀<span class="bl"> Запустить</span></button>
+          <button class="btn danger btn-send" id="btnStop" onclick="Chat.stop()" style="display:none">■<span class="bl"> Стоп</span></button>
+        </div>
+        <div class="hint"><span id="composerHint">Готово к работе</span><span class="row"><label class="row small muted chk"><input type="checkbox" id="autoScroll" checked> автопрокрутка</label><span id="statusText">Кластер в режиме ожидания</span></span></div>
+      </div>
+    </section>
+
+    <!-- ===== Telemetry ===== -->
+    <section class="view" id="view-telemetry">
+      <div class="scroll tel-wrap">
+        <div class="row" style="justify-content:space-between">
+          <div><b>Хост-машина</b> <span class="muted small" id="hostName"></span></div>
+          <div class="row small muted">Обновление: <span id="telTs">—</span> <button class="btn sm" onclick="Telemetry.refresh(true)">↻</button></div>
+        </div>
+        <div class="tel-host" id="hostStats"></div>
+        <div style="margin-top:6px"><b>Узлы кластера</b> <span class="muted small">— CPU, ОЗУ, GPU, сеть по каждому узлу</span></div>
+        <div class="tel-grid" id="telGrid"></div>
+      </div>
+    </section>
+
+    <!-- ===== Prompt roles ===== -->
+    <section class="view" id="view-prompts">
+      <div class="prompts-wrap">
+        <div class="prompts-list" id="promptsList"></div>
+        <div class="prompts-editor" id="promptsEditor"></div>
+      </div>
+    </section>
+
+    <!-- ===== Models ===== -->
+    <section class="view" id="view-models">
+      <div class="scroll models-wrap" id="modelsWrap"></div>
+    </section>
+
+    <!-- ===== Users ===== -->
+    <section class="view" id="view-users">
+      <div class="scroll users-wrap">
+        <div class="card">
+          <div class="card-h">👤 Моё подключение</div>
+          <div class="card-b grid-3">
+            <div class="field"><label>Отображаемое имя</label><input type="text" id="meNameInput" placeholder="Например: Админ / MacBook"><span class="hint">Видно другим пользователям и в подписях сообщений</span></div>
+            <div class="field"><label>Идентификатор / IP / права</label><div class="mono small" id="meIdInfo">—</div></div>
+            <div class="field"><label>Скорость до хаба</label><div class="row"><span class="mono" id="meSpeed">—</span><button class="btn sm" onclick="Users.speedtest()">Измерить</button></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h">👥 Подключённые устройства <span class="muted small" id="usersCount"></span><span class="grow"></span><span class="muted small">Адрес для подключения: <span class="mono" id="usersTunnel"></span></span></div>
+          <div class="card-b" id="usersBody" style="padding:0"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Help ===== -->
+    <section class="view" id="view-help">
+      <div class="help-wrap">
+        <nav class="help-nav" id="helpNav"></nav>
+        <div class="scroll help-body" id="helpBody"></div>
+      </div>
+    </section>
+
+    <!-- ===== Settings ===== -->
+    <section class="view" id="view-settings">
+      <div class="settings-wrap">
+        <nav class="settings-nav">
+          <button class="active" data-s="ui" onclick="Settings.show('ui')">🎨 Интерфейс</button>
+          <button data-s="nodes" class="admin-only" onclick="Settings.show('nodes')">🖥 Узлы</button>
+          <button data-s="llm" class="admin-only" onclick="Settings.show('llm')">🧠 LLM</button>
+          <button data-s="modes" class="admin-only" onclick="Settings.show('modes')">🔄 Конвейер и консилиум</button>
+          <button data-s="skills" class="admin-only" onclick="Settings.show('skills')">✨ Skills</button>
+          <button data-s="conn" class="admin-only" onclick="Settings.show('conn')">🌐 Подключение и доступ</button>
+          <button data-s="security" class="admin-only" onclick="Settings.show('security')">🔒 Безопасность</button>
+        </nav>
+        <div class="settings-body">
+          <div class="settings-section active" id="s-ui">
+            <h2>Интерфейс</h2>
+            <div class="desc">Хранится в браузере этого устройства.</div>
+            <div class="grid-3">
+              <div class="field"><label>Тема</label><select id="uiTheme"><option value="dark">Тёмная</option><option value="light">Светлая</option><option value="system">Как в системе</option></select></div>
+              <div class="field"><label>Размер шрифта</label><input type="number" id="uiFont" min="11" max="18"></div>
+              <div class="field"><label>Плотность</label><select id="uiDensity"><option value="comfortable">Обычная</option><option value="compact">Компактная</option></select></div>
+              <div class="field"><label>Акцент</label><div class="swatches" id="uiSwatches"></div></div>
+              <div class="field"><label>Интервал обновления (мс)</label><input type="number" id="uiPoll" min="500" max="10000" step="250"></div>
+              <div class="field"><label>Ширина панели веток (px)</label><input type="number" id="uiSidebar" min="200" max="420" step="10"></div>
+            </div>
+            <div class="row wrap" style="gap:18px">
+              <label class="row"><input type="checkbox" id="uiStrip"> Показывать панель узлов над чатом</label>
+              <label class="row"><input type="checkbox" id="uiReasoning"> Раскрывать блок «размышления» по умолчанию</label>
+              <label class="row"><input type="checkbox" id="uiConfirmClear"> Подтверждать очистку чата</label>
+            </div>
+            <div class="row"><button class="btn primary" onclick="Settings.saveUi()">Применить</button><button class="btn" onclick="Settings.resetUi()">По умолчанию</button></div>
+            <div class="tel-hint non-admin-only" style="display:none">Остальные разделы настроек доступны только администратору (интерфейс, открытый на хост-машине кластера).</div>
+          </div>
+
+          <div class="settings-section" id="s-nodes">
+            <div class="row"><h2>Узлы</h2><span class="grow"></span><button class="btn" onclick="UI.showTab('admin')" title="Адрес платформы, поиск устройств в тейлнете, установка агента">🔗 Подключение</button><button class="btn primary" onclick="Settings.openAddNode()">＋ Добавить узел</button></div>
+            <div class="desc">Адрес inference-сервера (OpenAI-совместимый), модель, телеметрия и таймаут каждого узла. Источник телеметрии «авто»: узлы на этой машине — локально, удалённые — агент <code>node_agent.py</code> на порту агента.</div>
+            <div id="nodesForms" style="display:flex; flex-direction:column; gap:12px"></div>
+          </div>
+
+          <div class="settings-section" id="s-llm">
+            <h2>Параметры LLM по умолчанию</h2>
+            <div class="desc">Используются для всех запросов, если не переопределены skill'ом или параметрами композера.</div>
+            <div class="grid-3" id="llmForm">
+              <div class="field"><label>max_tokens</label><input type="number" data-k="max_tokens" min="16" step="128"></div>
+              <div class="field"><label>temperature</label><input type="number" data-k="temperature" min="0" max="2" step="0.05"></div>
+              <div class="field"><label>top_p</label><input type="number" data-k="top_p" min="0" max="1" step="0.01"></div>
+              <div class="field"><label>reasoning_effort</label><select data-k="reasoning_effort"><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="off">не передавать</option></select><span class="hint">LM Studio: none отключает «думание» у Qwen3</span></div>
+              <div class="field"><label>Таймаут запроса (с)</label><input type="number" data-k="timeout_s" min="10" step="10"></div>
+              <div class="field"><label>История диалога (ходов)</label><input type="number" data-k="history_turns" min="0" max="50"><span class="hint">Сколько предыдущих пар вопрос-ответ передавать узлу</span></div>
+              <div class="field"><label>Контекст между этапами (символов)</label><input type="number" data-k="pipeline_context_chars" min="200" step="100"><span class="hint">Сколько текста результата этапа передавать следующему</span></div>
+              <div class="field"><label>Стриминг</label><select data-k="stream"><option value="true">включён</option><option value="false">выключен</option></select></div>
+              <div class="field"><label>Отвечать на языке вопроса</label><select data-k="force_language"><option value="true">да (правило языка в каждом запросе)</option><option value="false">нет</option></select></div>
+            </div>
+            <div class="row"><button class="btn primary" onclick="Settings.saveLlm()">Сохранить</button><button class="btn" onclick="Settings.reset('llm')">По умолчанию</button></div>
+          </div>
+
+          <div class="settings-section" id="s-modes">
+            <h2>Конвейер по умолчанию</h2>
+            <div class="desc">Шаги режима «Конвейер». Каждый шаг получает исходную задачу и результаты предыдущих шагов. В любой ветке конвейер можно скопировать в «Гибрид» и изменить только для неё.</div>
+            <div id="pipelineSteps"></div>
+            <div class="row"><button class="btn" onclick="Settings.addStep()">＋ Шаг</button><span class="grow"></span><button class="btn primary" onclick="Settings.savePipeline()">Сохранить</button><button class="btn" onclick="Settings.reset('pipeline')">По умолчанию</button></div>
+            <h2 style="margin-top:14px">Консилиум</h2>
+            <div class="desc">Узлы пишут черновики, затем обсуждают их (раунды критики), модератор собирает один итоговый ответ.</div>
+            <div class="grid-3" id="councilForm">
+              <div class="field"><label>Раундов обсуждения</label><input type="number" data-k="rounds" min="0" max="3"><span class="hint">0 — сразу синтез из черновиков</span></div>
+              <div class="field"><label>Модератор по умолчанию</label><select data-k="moderator" id="councilModerator"></select><span class="hint">Пусто — целевой узел из композера</span></div>
+              <div class="field"><label>Токенов на замечание</label><input type="number" data-k="critique_max_tokens" min="100" step="100"></div>
+              <div class="field"><label>Символов черновика в синтез</label><input type="number" data-k="draft_chars" min="500" step="500"></div>
+              <div class="field"><label>Символов замечания в синтез</label><input type="number" data-k="critique_chars" min="300" step="100"></div>
+            </div>
+            <div class="row"><button class="btn primary" onclick="Settings.saveCouncil()">Сохранить</button><button class="btn" onclick="Settings.reset('council')">По умолчанию</button></div>
+          </div>
+
+          <div class="settings-section" id="s-skills">
+            <h2>Skills — режимы ответа</h2>
+            <div class="desc">Skill добавляет инструкцию к системному промпту, переопределяет параметры генерации и может включать поиск в интернете. Встроенные можно подстроить (сброс — «По умолчанию»), свои — добавить.</div>
+            <div id="skillRows"></div>
+            <div class="row"><button class="btn" onclick="Settings.addSkill()">＋ Свой skill</button><span class="grow"></span><button class="btn primary" onclick="Settings.saveSkills()">Сохранить</button><button class="btn" onclick="Settings.reset('skills')">По умолчанию</button></div>
+          </div>
+
+          <div class="settings-section" id="s-security"></div>
+
+          <div class="settings-section" id="s-conn">
+            <h2>Подключение, телеметрия, доступ</h2>
+            <div class="grid-3" id="connForm">
+              <div class="field"><label>Адрес хаба в тоннеле (Tailscale IP)</label><input type="text" data-s="connection" data-k="tunnel_host"></div>
+              <div class="field"><label>Порт хаба</label><input type="number" data-s="connection" data-k="port" disabled><span class="hint">Задаётся при запуске: <code>python hub_server.py 8765</code></span></div>
+              <div class="field"><label>Порт агента на узлах</label><input type="number" data-s="telemetry" data-k="agent_port"><span class="hint">На узле: <code>python3 node_agent.py 8766</code></span></div>
+              <div class="field"><label>Токен агента (X-BF-Token)</label><input type="text" data-s="telemetry" data-k="agent_token" placeholder="пусто — без токена"><span class="hint">Если агенты запущены с <code>--token</code></span></div>
+              <div class="field"><label>Интервал опроса телеметрии (с)</label><input type="number" data-s="telemetry" data-k="interval_s" min="0.5" step="0.5"></div>
+              <div class="field"><label>Пинг LLM-сервера каждые (с)</label><input type="number" data-s="telemetry" data-k="llm_ping_interval_s" min="2" step="1"></div>
+              <div class="field"><label>Замер скорости каждые (с)</label><input type="number" data-s="telemetry" data-k="speedtest_interval_s" min="0" step="5"><span class="hint">0 — не измерять</span></div>
+              <div class="field"><label>Объём замера (байт)</label><input type="number" data-s="telemetry" data-k="speedtest_bytes" min="100000" step="100000"></div>
+              <div class="field"><label>Длина истории графиков (точек)</label><input type="number" data-s="telemetry" data-k="history_len" min="20" max="600"></div>
+              <div class="field"><label>Режим администратора</label><select data-s="admin" data-k="enabled"><option value="true">только хост-машина (и IP ниже)</option><option value="false">все пользователи — администраторы</option></select></div>
+              <div class="field" style="grid-column: span 2"><label>Дополнительные IP администраторов (через запятую)</label><input type="text" data-s="admin" data-k="extra_ips" placeholder="100.64.0.10, 100.64.0.11"></div>
+              <div class="field"><label>Узел-исполнитель команд администратора</label><select data-s="admin" data-k="command_node" id="adminCommandNode"></select><span class="hint">Какая LLM переводит команду на естественном языке в действие. Пусто — сам целевой узел.</span></div>
+            </div>
+            <div class="row"><button class="btn primary" onclick="Settings.saveConn()">Сохранить</button><button class="btn" onclick="Settings.reset('telemetry')">Телеметрия по умолчанию</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Admin ===== -->
+    <section class="view" id="view-admin">
+      <div class="scroll admin-wrap" id="adminWrap"></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<div class="modal-wrap" id="modal">
+  <div class="modal" id="modalBox">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody" class="scroll" style="max-height:70vh"></div>
+    <div class="row" style="justify-content:flex-end" id="modalFoot"><button class="btn" onclick="UI.closeModal()">Отмена</button><button class="btn primary" id="modalOk">OK</button></div>
+  </div>
+</div>
+
+<script src="/app.js?v=11"></script>
+<script src="/views.js?v=11"></script>
+<script src="/sensors_view.js?v=11"></script>
+<script src="/models.js?v=11"></script>
+<script src="/admin.js?v=11"></script>
+<script src="/security.js?v=11"></script>
+<script src="/help.js?v=11"></script>
+<script src="/qr.js?v=11"></script>
+<script src="/connect.js?v=11"></script>
+<script src="/mobile.js?v=11"></script>
+<script>
+  window.addEventListener("DOMContentLoaded", () => Boot.start());
+  // Service worker нужен только для установки на домашний экран и открытия без связи;
+  // стратегия внутри — «сеть вперёд», чтобы интерфейс не отставал от хаба.
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  }
+</script>
+</body>
+</html>
